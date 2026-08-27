@@ -1,6 +1,11 @@
 import { deepStrictEqual, rejects, throws } from "assert";
 import {
+  generateConflictCopyPath,
   getFileRenameForDup,
+  mergeYamlObjects,
+  parseSimpleYaml,
+  smartMergeMarkdown,
+  splitFrontmatterAndBody,
   threeWayMerge,
   twoWayMerge,
 } from "../src/conflictLogic";
@@ -292,5 +297,45 @@ bbb
 * [ ] A4
 `;
     deepStrictEqual(expected, res);
+  });
+});
+
+describe("Generate conflict copy path", () => {
+  it("should generate a valid conflict copy path with timestamp", () => {
+    const p1 = generateConflictCopyPath("Daily/Note.md", "remote");
+    deepStrictEqual(p1.startsWith("Daily/Note.sync-conflict-remote-"), true);
+    deepStrictEqual(p1.endsWith(".md"), true);
+  });
+});
+
+describe("Frontmatter and Smart Merge", () => {
+  it("should split frontmatter and body correctly", () => {
+    const doc = `---\ntags: note\nstatus: draft\n---\n# Title\nBody content`;
+    const { frontmatter, body } = splitFrontmatterAndBody(doc);
+    deepStrictEqual(frontmatter, "tags: note\nstatus: draft");
+    deepStrictEqual(body, "# Title\nBody content");
+  });
+
+  it("should merge YAML frontmatter keys from both sides without conflict", () => {
+    const orig = { title: "Note", author: "Alice" };
+    const left = { title: "Note Updated", author: "Alice" }; // changed title
+    const right = { title: "Note", author: "Alice", tags: "project" }; // added tags
+
+    const merged = mergeYamlObjects(left, right, orig);
+    deepStrictEqual(merged.title, "Note Updated");
+    deepStrictEqual(merged.author, "Alice");
+    deepStrictEqual(merged.tags, "project");
+  });
+
+  it("should smart merge non-conflicting markdown body cleanly", () => {
+    const orig = `---\ntags: test\n---\nLine 1\nLine 2\nLine 3\n`;
+    const left = `---\ntags: test\n---\nLine 1 (local mod)\nLine 2\nLine 3\n`;
+    const right = `---\ntags: test\n---\nLine 1\nLine 2\nLine 3 (remote mod)\n`;
+
+    const res = smartMergeMarkdown(left, right, orig);
+    deepStrictEqual(res.hasConflict, false);
+    deepStrictEqual(res.mergedText.includes("Line 1 (local mod)"), true);
+    deepStrictEqual(res.mergedText.includes("Line 3 (remote mod)"), true);
+    deepStrictEqual(res.mergedText.includes("<<<<<<<"), false);
   });
 });

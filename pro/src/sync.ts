@@ -1619,7 +1619,7 @@ const dispatchOperationToActualV3 = async (
       );
       // console.debug(`we get origContent:`)
       // console.debug(origContent)
-      const { entity, content } = await mergeFile(
+      const mergeRes = await mergeFile(
         r.key,
         fsLocal,
         fsEncrypt,
@@ -1629,15 +1629,23 @@ const dispatchOperationToActualV3 = async (
         db,
         vaultRandomID,
         profileID,
-        entity
+        mergeRes.entity
       );
       await upsertFileContentHistoryByVaultAndProfile(
         db,
         vaultRandomID,
         profileID,
-        entity,
-        content
+        mergeRes.entity,
+        mergeRes.content
       );
+      if (mergeRes.conflictCopyCreated && mergeRes.conflictCopyEntity) {
+        await upsertPrevSyncRecordByVaultAndProfile(
+          db,
+          vaultRandomID,
+          profileID,
+          mergeRes.conflictCopyEntity
+        );
+      }
     } else {
       // duplicate the files
       await clearPrevSyncRecordByVaultAndProfile(

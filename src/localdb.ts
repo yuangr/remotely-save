@@ -450,17 +450,19 @@ export const getAllPrevSyncRecordsByVaultAndProfile = async (
   vaultRandomID: string,
   profileID: string
 ) => {
+  const prefix = `${vaultRandomID}\t${profileID}\t`;
   const res: Entity[] = [];
-  const kv: Record<string, Entity | null> =
-    await db.prevSyncRecordsTbl.getItems();
-  for (const key of Object.getOwnPropertyNames(kv)) {
-    if (key.startsWith(`${vaultRandomID}\t${profileID}\t`)) {
-      const val = kv[key];
-      if (val !== null) {
-        res.push(val);
+
+  // Use iterate() instead of getItems() to avoid loading the entire table
+  // into memory. iterate() streams records one-by-one from IndexedDB,
+  // which is critical for large vaults with 10,000+ files.
+  await db.prevSyncRecordsTbl.iterate<Entity | null, void>(
+    (value, key, _iterationNumber) => {
+      if (key.startsWith(prefix) && value !== null) {
+        res.push(value);
       }
     }
-  }
+  );
   return res;
 };
 

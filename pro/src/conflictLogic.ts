@@ -1,18 +1,7 @@
 import isEqual from "lodash/isEqual";
-// import {
-//   makePatches,
-//   applyPatches,
-//   stringifyPatches,
-//   parsePatch,
-// } from "@sanity/diff-match-patch";
 import {
   LCS,
-  diff3Merge,
-  diffComm,
-  diffPatch,
-  mergeDiff3,
   mergeDigIn,
-  patch,
 } from "node-diff3";
 import type { Entity } from "../../src/baseTypes";
 import { copyFile } from "../../src/copyLogic";
@@ -31,12 +20,128 @@ export function isMergable(a: Entity, b?: Entity) {
   );
 }
 
-/**
- * slightly modify to adjust in markdown context
- * @param a
- * @param o
- * @param b
- */
+export function generateConflictCopyPath(key: string, suffix = "remote"): string {
+  const parts = key.split('/');
+  const fileName = parts.pop() || '';
+  const nameParts = fileName.split('.');
+  const ext = nameParts.length > 1 ? `.${nameParts.pop()}` : '';
+  const baseName = nameParts.join('.');
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const suffixPart = suffix ? `-${suffix}` : '';
+  
+  const newFileName = `${baseName}.sync-conflict${suffixPart}-${timestamp}${ext}`;
+  parts.push(newFileName);
+  return parts.join('/');
+}
+
+export function splitFrontmatterAndBody(content: string): { frontmatter: string | null; body: string } {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+  if (match && content.startsWith(match[0])) {
+    return { frontmatter: match[1], body: content.slice(match[0].length) };
+  }
+  return { frontmatter: null, body: content };
+}
+
+export function parseSimpleYaml(yamlText: string): Record<string, any> {
+  const obj: Record<string, any> = {};
+  const lines = yamlText.split(/\r?\n/);
+  for (const line of lines) {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0) {
+      const key = line.slice(0, colonIdx).trim();
+      const value = line.slice(colonIdx + 1).trim();
+      obj[key] = value;
+    }
+  }
+  return obj;
+}
+
+export function mergeYamlObjects(leftObj: any, rightObj: any, origObj: any = {}): any {
+  const result: any = { ...origObj };
+  const allKeys = new Set([...Object.keys(leftObj), ...Object.keys(rightObj), ...Object.keys(origObj)]);
+  
+  for (const key of allKeys) {
+    const leftHas = key in leftObj;
+    const rightHas = key in rightObj;
+    const origHas = key in origObj;
+    
+    if (leftHas && rightHas) {
+      if (leftObj[key] !== rightObj[key]) {
+        result[key] = leftObj[key];
+      } else {
+        result[key] = leftObj[key];
+      }
+    } else if (leftHas && !rightHas) {
+      if (origHas && origObj[key] === leftObj[key]) {
+        delete result[key];
+      } else {
+        result[key] = leftObj[key];
+      }
+    } else if (!leftHas && rightHas) {
+      if (origHas && origObj[key] === rightObj[key]) {
+        delete result[key];
+      } else {
+        result[key] = rightObj[key];
+      }
+    } else if (!leftHas && !rightHas) {
+        delete result[key];
+    }
+  }
+  return result;
+}
+
+export function stringifySimpleYaml(obj: any): string {
+  if (Object.keys(obj).length === 0) return "";
+  const lines = [];
+  for (const [key, value] of Object.entries(obj)) {
+    lines.push(`${key}: ${value}`);
+  }
+  return lines.join('\n');
+}
+
+export interface SmartMergeResult {
+  mergedText: string;
+  hasConflict: boolean;
+}
+
+export function smartMergeMarkdown(leftText: string, rightText: string, origText?: string | null): SmartMergeResult {
+  const leftParts = splitFrontmatterAndBody(leftText);
+  const rightParts = splitFrontmatterAndBody(rightText);
+  const origParts = origText ? splitFrontmatterAndBody(origText) : { frontmatter: null, body: "" };
+
+  let mergedYaml = "";
+  if (leftParts.frontmatter !== null || rightParts.frontmatter !== null) {
+    const leftYaml = leftParts.frontmatter ? parseSimpleYaml(leftParts.frontmatter) : {};
+    const rightYaml = rightParts.frontmatter ? parseSimpleYaml(rightParts.frontmatter) : {};
+    const origYaml = origParts.frontmatter ? parseSimpleYaml(origParts.frontmatter) : {};
+    
+    const mergedObj = mergeYamlObjects(leftYaml, rightYaml, origYaml);
+    mergedYaml = stringifySimpleYaml(mergedObj);
+    if (mergedYaml.length > 0) {
+      mergedYaml = `---\n${mergedYaml}\n---\n`;
+    }
+  }
+
+  let bodyConflict = false;
+  let mergedBody = "";
+  
+  if (!origText) {
+    mergedBody = twoWayMerge(leftParts.body, rightParts.body);
+  } else {
+    mergedBody = threeWayMerge(leftParts.body, rightParts.body, origParts.body);
+  }
+
+  if (mergedBody.includes("<<<<<<<") && mergedBody.includes("=======") && mergedBody.includes(">>>>>>>")) {
+    bodyConflict = true;
+  }
+
+  return {
+    mergedText: `${mergedYaml}${mergedBody}`,
+    hasConflict: bodyConflict
+  };
+}
+
 function mergeDigInModified(a: string, o: string, b: string) {
   const { conflict, result } = mergeDigIn(a, o, b, {
     stringSeparator: /\n/,
@@ -68,12 +173,6 @@ function getLCSText(a: string, b: string) {
   return k.join("\n");
 }
 
-/**
- * It's tricky. We find LCS then pretend it's the original text
- * @param a
- * @param b
- * @returns
- */
 export function twoWayMerge(a: string, b: string): string {
   const aa = a.trim();
   const bb = b.trim();
@@ -87,26 +186,21 @@ export function twoWayMerge(a: string, b: string): string {
     return b;
   }
 
-  // const c = getLCSText(a, b);
-  // const patches = makePatches(c, a);
-  // const [d] = applyPatches(patches, b);
-  const c = getLCSText(a, b); //.trim();
-  // console.debug(`(start) LCS Text:`);
-  // console.debug(c);
-  // console.debug(`(end) LCS Text.`);
+  const c = getLCSText(a, b);
   const d = mergeDigInModified(a, c, b).result.join("\n");
   return d;
 }
 
-/**
- * Originally three way merge.
- * @param a
- * @param b
- * @param orig
- * @returns
- */
 export function threeWayMerge(a: string, b: string, orig: string) {
   return mergeDigInModified(a, orig, b).result.join("\n");
+}
+
+export interface MergeFileResult {
+  entity: Entity;
+  content: ArrayBuffer;
+  conflictCopyCreated: boolean;
+  conflictCopyKey?: string;
+  conflictCopyEntity?: Entity;
 }
 
 export async function mergeFile(
@@ -114,10 +208,7 @@ export async function mergeFile(
   left: FakeFs,
   right: FakeFs,
   contentOrig: ArrayBuffer | null | undefined
-) {
-  // console.debug(
-  //   `mergeFile: key=${key}, left=${left.kind}, right=${right.kind}`
-  // );
+): Promise<MergeFileResult> {
   if (key.endsWith("/")) {
     throw Error(`should not call ${key} in mergeFile`);
   }
@@ -132,48 +223,80 @@ export async function mergeFile(
   ]);
 
   let newArrayBuffer: ArrayBuffer | undefined = undefined;
+  let conflictCopyCreated = false;
+  let conflictCopyKey: string | undefined = undefined;
+  let conflictCopyEntity: Entity | undefined = undefined;
   const decoder = new TextDecoder("utf-8");
-
-  if (isEqual(contentLeft, contentRight)) {
-    // we are lucky enough
-    newArrayBuffer = contentLeft;
-    // TODO: save the write
-  } else {
-    if (contentOrig === null || contentOrig === undefined) {
-      const newText = twoWayMerge(
-        decoder.decode(contentLeft),
-        decoder.decode(contentRight)
-      );
-      // no need to worry about the offset here because the array is new and not sliced
-      newArrayBuffer = new TextEncoder().encode(newText).buffer;
-    } else {
-      const newText = threeWayMerge(
-        decoder.decode(contentLeft),
-        decoder.decode(contentRight),
-        decoder.decode(contentOrig)
-      );
-      newArrayBuffer = new TextEncoder().encode(newText).buffer;
-    }
-  }
 
   const mtime = Date.now();
 
-  // left (local) must wait for the right
-  // because the mtime might be different after upload
-  // upload firstly
-  const rightEntity = await right.writeFile(key, newArrayBuffer, mtime, mtime);
-  // write local secondly
-  const leftEntity = await left.writeFile(
-    key,
-    newArrayBuffer,
-    rightEntity.mtimeCli ?? mtime,
-    rightEntity.ctimeCli ?? rightEntity.mtimeCli ?? mtime
-  );
-
-  return {
-    entity: rightEntity,
-    content: newArrayBuffer,
-  };
+  if (isEqual(contentLeft, contentRight)) {
+    newArrayBuffer = contentLeft;
+    const rightEntity = await right.writeFile(key, newArrayBuffer, mtime, mtime);
+    const leftEntity = await left.writeFile(
+      key,
+      newArrayBuffer,
+      rightEntity.mtimeCli ?? mtime,
+      rightEntity.ctimeCli ?? rightEntity.mtimeCli ?? mtime
+    );
+    return {
+      entity: rightEntity,
+      content: newArrayBuffer,
+      conflictCopyCreated: false
+    };
+  } else {
+    const leftText = decoder.decode(contentLeft);
+    const rightText = decoder.decode(contentRight);
+    const origText = contentOrig ? decoder.decode(contentOrig) : null;
+    
+    const mergeResult = smartMergeMarkdown(leftText, rightText, origText);
+    
+    if (mergeResult.hasConflict) {
+      newArrayBuffer = new TextEncoder().encode(leftText).buffer;
+      
+      conflictCopyCreated = true;
+      conflictCopyKey = generateConflictCopyPath(key, "remote");
+      
+      const rightEntity = await right.writeFile(key, newArrayBuffer, mtime, mtime);
+      const leftEntity = await left.writeFile(
+        key,
+        newArrayBuffer,
+        rightEntity.mtimeCli ?? mtime,
+        rightEntity.ctimeCli ?? rightEntity.mtimeCli ?? mtime
+      );
+      
+      conflictCopyEntity = await left.writeFile(
+        conflictCopyKey,
+        contentRight,
+        mtime,
+        mtime
+      );
+      
+      return {
+        entity: rightEntity,
+        content: newArrayBuffer,
+        conflictCopyCreated,
+        conflictCopyKey,
+        conflictCopyEntity
+      };
+    } else {
+      newArrayBuffer = new TextEncoder().encode(mergeResult.mergedText).buffer;
+      
+      const rightEntity = await right.writeFile(key, newArrayBuffer, mtime, mtime);
+      const leftEntity = await left.writeFile(
+        key,
+        newArrayBuffer,
+        rightEntity.mtimeCli ?? mtime,
+        rightEntity.ctimeCli ?? rightEntity.mtimeCli ?? mtime
+      );
+      
+      return {
+        entity: rightEntity,
+        content: newArrayBuffer,
+        conflictCopyCreated: false
+      };
+    }
+  }
 }
 
 export function getFileRenameForDup(key: string) {

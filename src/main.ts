@@ -1,7 +1,7 @@
 // biome-ignore lint/suspicious/noShadowRestrictedNames: <explanation>
 import AggregateError from "aggregate-error";
 import cloneDeep from "lodash/cloneDeep";
-import throttle from "lodash/throttle";
+import debounce from "lodash/debounce";
 import { FileText, RefreshCcw, RotateCcw, createElement } from "lucide";
 import {
   Events,
@@ -111,6 +111,7 @@ import { changeMobileStatusBar } from "./misc";
 import { DEFAULT_PROFILER_CONFIG, Profiler } from "./profiler";
 import { RemotelySaveSettingTab } from "./settings";
 import { SyncAlgoV3Modal } from "./syncAlgoV3Notice";
+import { ConflictResolutionModal } from "./conflictModal";
 
 const DEFAULT_SETTINGS: RemotelySavePluginSettings = {
   s3: DEFAULT_S3_CONFIG,
@@ -485,32 +486,34 @@ export default class RemotelySavePlugin extends Plugin {
 
     const configSaver = async () => await this.saveSettings();
 
-    await syncer(
-      fsLocal,
-      fsRemote,
-      fsEncrypt,
-      profiler,
-      this.db,
-      triggerSource,
-      profileID,
-      this.vaultRandomID,
-      this.app.vault.configDir,
-      this.settings,
-      this.manifest.version,
-      configSaver,
-      getProtectError,
-      markIsSyncingFunc,
-      notifyFunc,
-      errNotifyFunc,
-      ribboonFunc,
-      statusBarFunc,
-      callbackSyncProcess
-    );
-
-    fsEncrypt.closeResources();
-    (profiler as Profiler | undefined)?.clear();
-
-    this.syncEvent?.trigger("SYNC_DONE");
+    try {
+      await syncer(
+        fsLocal,
+        fsRemote,
+        fsEncrypt,
+        profiler,
+        this.db,
+        triggerSource,
+        profileID,
+        this.vaultRandomID,
+        this.app.vault.configDir,
+        this.settings,
+        this.manifest.version,
+        configSaver,
+        getProtectError,
+        markIsSyncingFunc,
+        notifyFunc,
+        errNotifyFunc,
+        ribboonFunc,
+        statusBarFunc,
+        callbackSyncProcess
+      );
+    } finally {
+      this.isSyncing = false;
+      fsEncrypt.closeResources();
+      (profiler as Profiler | undefined)?.clear();
+      this.syncEvent?.trigger("SYNC_DONE");
+    }
   }
 
   async onload() {
@@ -619,21 +622,11 @@ export default class RemotelySavePlugin extends Plugin {
           inputParams.code !== undefined &&
           this.oauth2Info?.verifier !== undefined
         ) {
-          if (this.oauth2Info.helperModal !== undefined) {
-            const k = this.oauth2Info.helperModal.contentEl;
-            k.empty();
-
-            t("protocol_dropbox_connecting")
-              .split("\n")
-              .forEach((val) => {
-                k.createEl("p", {
-                  text: val,
-                });
-              });
-          } else {
+          if (this.oauth2Info.helperModal === undefined) {
             new Notice(t("protocol_dropbox_no_modal"));
             return;
           }
+          this._showOAuthConnecting(t("protocol_dropbox_connecting"));
 
           const authRes = await sendAuthReqDropbox(
             this.settings.dropbox.clientID,
@@ -668,27 +661,14 @@ export default class RemotelySavePlugin extends Plugin {
             })
           );
 
-          this.oauth2Info.verifier = ""; // reset it
-          this.oauth2Info.helperModal?.close(); // close it
-          this.oauth2Info.helperModal = undefined;
-
-          this.oauth2Info.authDiv?.toggleClass(
+          this._cleanupOAuthInfo(
             "dropbox-auth-button-hide",
-            this.settings.dropbox.username !== ""
-          );
-          this.oauth2Info.authDiv = undefined;
-
-          this.oauth2Info.revokeAuthSetting?.setDesc(
+            "dropbox-revoke-auth-button-hide",
+            this.settings.dropbox.username !== "",
             t("protocol_dropbox_connect_succ_revoke", {
               username: this.settings.dropbox.username,
             })
           );
-          this.oauth2Info.revokeAuthSetting = undefined;
-          this.oauth2Info.revokeDiv?.toggleClass(
-            "dropbox-revoke-auth-button-hide",
-            this.settings.dropbox.username === ""
-          );
-          this.oauth2Info.revokeDiv = undefined;
         } else {
           new Notice(t("protocol_dropbox_connect_fail"));
           throw Error(
@@ -707,18 +687,7 @@ export default class RemotelySavePlugin extends Plugin {
           inputParams.code !== undefined &&
           this.oauth2Info?.verifier !== undefined
         ) {
-          if (this.oauth2Info.helperModal !== undefined) {
-            const k = this.oauth2Info.helperModal.contentEl;
-            k.empty();
-
-            t("protocol_onedrive_connecting")
-              .split("\n")
-              .forEach((val) => {
-                k.createEl("p", {
-                  text: val,
-                });
-              });
-          }
+          this._showOAuthConnecting(t("protocol_onedrive_connecting"));
 
           const rsp = await sendAuthReqOnedrive(
             this.settings.onedrive.clientID,
@@ -752,27 +721,14 @@ export default class RemotelySavePlugin extends Plugin {
           this.settings.onedrive.username = await client.getUserDisplayName();
           await this.saveSettings();
 
-          this.oauth2Info.verifier = ""; // reset it
-          this.oauth2Info.helperModal?.close(); // close it
-          this.oauth2Info.helperModal = undefined;
-
-          this.oauth2Info.authDiv?.toggleClass(
+          this._cleanupOAuthInfo(
             "onedrive-auth-button-hide",
-            this.settings.onedrive.username !== ""
-          );
-          this.oauth2Info.authDiv = undefined;
-
-          this.oauth2Info.revokeAuthSetting?.setDesc(
+            "onedrive-revoke-auth-button-hide",
+            this.settings.onedrive.username !== "",
             t("protocol_onedrive_connect_succ_revoke", {
               username: this.settings.onedrive.username,
             })
           );
-          this.oauth2Info.revokeAuthSetting = undefined;
-          this.oauth2Info.revokeDiv?.toggleClass(
-            "onedrive-revoke-auth-button-hide",
-            this.settings.onedrive.username === ""
-          );
-          this.oauth2Info.revokeDiv = undefined;
         } else {
           new Notice(t("protocol_onedrive_connect_fail"));
           throw Error(
@@ -791,18 +747,7 @@ export default class RemotelySavePlugin extends Plugin {
           inputParams.code !== undefined &&
           this.oauth2Info?.verifier !== undefined
         ) {
-          if (this.oauth2Info.helperModal !== undefined) {
-            const k = this.oauth2Info.helperModal.contentEl;
-            k.empty();
-
-            t("protocol_onedrivefull_connecting")
-              .split("\n")
-              .forEach((val) => {
-                k.createEl("p", {
-                  text: val,
-                });
-              });
-          }
+          this._showOAuthConnecting(t("protocol_onedrivefull_connecting"));
 
           const rsp = await sendAuthReqOnedriveFull(
             this.settings.onedrivefull.clientID,
@@ -837,27 +782,14 @@ export default class RemotelySavePlugin extends Plugin {
             await client.getUserDisplayName();
           await this.saveSettings();
 
-          this.oauth2Info.verifier = ""; // reset it
-          this.oauth2Info.helperModal?.close(); // close it
-          this.oauth2Info.helperModal = undefined;
-
-          this.oauth2Info.authDiv?.toggleClass(
+          this._cleanupOAuthInfo(
             "onedrivefull-auth-button-hide",
-            this.settings.onedrivefull.username !== ""
-          );
-          this.oauth2Info.authDiv = undefined;
-
-          this.oauth2Info.revokeAuthSetting?.setDesc(
+            "onedrivefull-revoke-auth-button-hide",
+            this.settings.onedrivefull.username !== "",
             t("protocol_onedrivefull_connect_succ_revoke", {
               username: this.settings.onedrivefull.username,
             })
           );
-          this.oauth2Info.revokeAuthSetting = undefined;
-          this.oauth2Info.revokeDiv?.toggleClass(
-            "onedrivefull-revoke-auth-button-hide",
-            this.settings.onedrivefull.username === ""
-          );
-          this.oauth2Info.revokeDiv = undefined;
         } else {
           new Notice(t("protocol_onedrivefull_connect_fail"));
           throw Error(
@@ -872,18 +804,7 @@ export default class RemotelySavePlugin extends Plugin {
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_PRO,
       async (inputParams) => {
-        if (this.oauth2Info.helperModal !== undefined) {
-          const k = this.oauth2Info.helperModal.contentEl;
-          k.empty();
-
-          t("protocol_pro_connecting")
-            .split("\n")
-            .forEach((val) => {
-              k.createEl("p", {
-                text: val,
-              });
-            });
-        }
+        this._showOAuthConnecting(t("protocol_pro_connecting"));
 
         console.debug(inputParams);
         const authRes = await sendAuthReqPro(
@@ -916,45 +837,21 @@ export default class RemotelySavePlugin extends Plugin {
           () => self.saveSettings()
         );
 
-        this.oauth2Info.verifier = ""; // reset it
-        this.oauth2Info.helperModal?.close(); // close it
-        this.oauth2Info.helperModal = undefined;
-
-        this.oauth2Info.authDiv?.toggleClass(
+        this._cleanupOAuthInfo(
           "pro-auth-button-hide",
-          this.settings.pro?.refreshToken !== ""
-        );
-        this.oauth2Info.authDiv = undefined;
-
-        this.oauth2Info.revokeAuthSetting?.setDesc(
+          "pro-revoke-auth-button-hide",
+          this.settings.pro?.refreshToken !== "",
           t("protocol_pro_connect_succ_revoke", {
             email: this.settings.pro?.email,
           })
         );
-        this.oauth2Info.revokeAuthSetting = undefined;
-        this.oauth2Info.revokeDiv?.toggleClass(
-          "pro-revoke-auth-button-hide",
-          this.settings.pro?.email === ""
-        );
-        this.oauth2Info.revokeDiv = undefined;
       }
     );
 
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_BOX,
       async (inputParams) => {
-        if (this.oauth2Info.helperModal !== undefined) {
-          const k = this.oauth2Info.helperModal.contentEl;
-          k.empty();
-
-          t("protocol_box_connecting")
-            .split("\n")
-            .forEach((val) => {
-              k.createEl("p", {
-                text: val,
-              });
-            });
-        }
+        this._showOAuthConnecting(t("protocol_box_connecting"));
 
         console.debug(inputParams);
         const authRes = await sendAuthReqBox(
@@ -974,43 +871,19 @@ export default class RemotelySavePlugin extends Plugin {
           () => self.saveSettings()
         );
 
-        this.oauth2Info.verifier = ""; // reset it
-        this.oauth2Info.helperModal?.close(); // close it
-        this.oauth2Info.helperModal = undefined;
-
-        this.oauth2Info.authDiv?.toggleClass(
+        this._cleanupOAuthInfo(
           "box-auth-button-hide",
-          this.settings.box?.refreshToken !== ""
-        );
-        this.oauth2Info.authDiv = undefined;
-
-        this.oauth2Info.revokeAuthSetting?.setDesc(
+          "box-revoke-auth-button-hide",
+          this.settings.box?.refreshToken !== "",
           t("protocol_box_connect_succ_revoke")
         );
-        this.oauth2Info.revokeAuthSetting = undefined;
-        this.oauth2Info.revokeDiv?.toggleClass(
-          "box-revoke-auth-button-hide",
-          this.settings.box?.refreshToken === ""
-        );
-        this.oauth2Info.revokeDiv = undefined;
       }
     );
 
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_PCLOUD,
       async (inputParams) => {
-        if (this.oauth2Info.helperModal !== undefined) {
-          const k = this.oauth2Info.helperModal.contentEl;
-          k.empty();
-
-          t("protocol_pcloud_connecting")
-            .split("\n")
-            .forEach((val) => {
-              k.createEl("p", {
-                text: val,
-              });
-            });
-        }
+        this._showOAuthConnecting(t("protocol_pcloud_connecting"));
 
         console.debug(inputParams);
         const authRes = await sendAuthReqPCloud(
@@ -1032,43 +905,19 @@ export default class RemotelySavePlugin extends Plugin {
           () => self.saveSettings()
         );
 
-        this.oauth2Info.verifier = ""; // reset it
-        this.oauth2Info.helperModal?.close(); // close it
-        this.oauth2Info.helperModal = undefined;
-
-        this.oauth2Info.authDiv?.toggleClass(
+        this._cleanupOAuthInfo(
           "pcloud-auth-button-hide",
-          this.settings.pcloud?.accessToken !== ""
-        );
-        this.oauth2Info.authDiv = undefined;
-
-        this.oauth2Info.revokeAuthSetting?.setDesc(
+          "pcloud-revoke-auth-button-hide",
+          this.settings.pcloud?.accessToken !== "",
           t("protocol_pcloud_connect_succ_revoke")
         );
-        this.oauth2Info.revokeAuthSetting = undefined;
-        this.oauth2Info.revokeDiv?.toggleClass(
-          "pcloud-revoke-auth-button-hide",
-          this.settings.pcloud?.accessToken === ""
-        );
-        this.oauth2Info.revokeDiv = undefined;
       }
     );
 
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_YANDEXDISK,
       async (inputParams) => {
-        if (this.oauth2Info.helperModal !== undefined) {
-          const k = this.oauth2Info.helperModal.contentEl;
-          k.empty();
-
-          t("protocol_yandexdisk_connecting")
-            .split("\n")
-            .forEach((val) => {
-              k.createEl("p", {
-                text: val,
-              });
-            });
-        }
+        this._showOAuthConnecting(t("protocol_yandexdisk_connecting"));
 
         console.debug(inputParams);
         const authRes = await sendAuthReqYandexDisk(
@@ -1088,43 +937,19 @@ export default class RemotelySavePlugin extends Plugin {
           () => self.saveSettings()
         );
 
-        this.oauth2Info.verifier = ""; // reset it
-        this.oauth2Info.helperModal?.close(); // close it
-        this.oauth2Info.helperModal = undefined;
-
-        this.oauth2Info.authDiv?.toggleClass(
+        this._cleanupOAuthInfo(
           "yandexdisk-auth-button-hide",
-          this.settings.yandexdisk?.refreshToken !== ""
-        );
-        this.oauth2Info.authDiv = undefined;
-
-        this.oauth2Info.revokeAuthSetting?.setDesc(
+          "yandexdisk-revoke-auth-button-hide",
+          this.settings.yandexdisk?.refreshToken !== "",
           t("protocol_yandexdisk_connect_succ_revoke")
         );
-        this.oauth2Info.revokeAuthSetting = undefined;
-        this.oauth2Info.revokeDiv?.toggleClass(
-          "yandexdisk-revoke-auth-button-hide",
-          this.settings.yandexdisk?.refreshToken === ""
-        );
-        this.oauth2Info.revokeDiv = undefined;
       }
     );
 
     this.registerObsidianProtocolHandler(
       COMMAND_CALLBACK_KOOFR,
       async (inputParams) => {
-        if (this.oauth2Info.helperModal !== undefined) {
-          const k = this.oauth2Info.helperModal.contentEl;
-          k.empty();
-
-          t("protocol_koofr_connecting")
-            .split("\n")
-            .forEach((val) => {
-              k.createEl("p", {
-                text: val,
-              });
-            });
-        }
+        this._showOAuthConnecting(t("protocol_koofr_connecting"));
 
         console.debug(inputParams);
         const authRes = await sendAuthReqKoofr(
@@ -1146,25 +971,12 @@ export default class RemotelySavePlugin extends Plugin {
           () => self.saveSettings()
         );
 
-        this.oauth2Info.verifier = ""; // reset it
-        this.oauth2Info.helperModal?.close(); // close it
-        this.oauth2Info.helperModal = undefined;
-
-        this.oauth2Info.authDiv?.toggleClass(
+        this._cleanupOAuthInfo(
           "koofr-auth-button-hide",
-          this.settings.koofr?.refreshToken !== ""
-        );
-        this.oauth2Info.authDiv = undefined;
-
-        this.oauth2Info.revokeAuthSetting?.setDesc(
+          "koofr-revoke-auth-button-hide",
+          this.settings.koofr?.refreshToken !== "",
           t("protocol_koofr_connect_succ_revoke")
         );
-        this.oauth2Info.revokeAuthSetting = undefined;
-        this.oauth2Info.revokeDiv?.toggleClass(
-          "koofr-revoke-auth-button-hide",
-          this.settings.koofr?.refreshToken === ""
-        );
-        this.oauth2Info.revokeDiv = undefined;
       }
     );
 
@@ -1208,6 +1020,14 @@ export default class RemotelySavePlugin extends Plugin {
         }, 1000 * 30)
       );
     }
+
+    this.addCommand({
+      id: "resolve-conflicts",
+      name: "Resolve sync conflicts / 解决同步冲突",
+      callback: () => {
+        new ConflictResolutionModal(this.app).open();
+      },
+    });
 
     this.addCommand({
       id: "start-sync",
@@ -1529,118 +1349,132 @@ export default class RemotelySavePlugin extends Plugin {
     }
   }
 
+  _showOAuthConnecting(connectingMsg: string) {
+    if (this.oauth2Info.helperModal !== undefined) {
+      const k = this.oauth2Info.helperModal.contentEl;
+      k.empty();
+      connectingMsg
+        .split("\n")
+        .forEach((val) => {
+          k.createEl("p", {
+            text: val,
+          });
+        });
+    }
+  }
+
+  _cleanupOAuthInfo(
+    authHideClass: string,
+    revokeHideClass: string,
+    isAuthenticated: boolean,
+    revokeDesc?: string
+  ) {
+    this.oauth2Info.verifier = "";
+    this.oauth2Info.helperModal?.close();
+    this.oauth2Info.helperModal = undefined;
+
+    this.oauth2Info.authDiv?.toggleClass(authHideClass, isAuthenticated);
+    this.oauth2Info.authDiv = undefined;
+
+    if (revokeDesc !== undefined) {
+      this.oauth2Info.revokeAuthSetting?.setDesc(revokeDesc);
+    }
+    this.oauth2Info.revokeAuthSetting = undefined;
+
+    this.oauth2Info.revokeDiv?.toggleClass(revokeHideClass, !isAuthenticated);
+    this.oauth2Info.revokeDiv = undefined;
+  }
+
   async checkIfOauthExpires() {
     let needSave = false;
     const current = Date.now();
+    const THIRTY_DAYS_MS = 1000 * 60 * 60 * 24 * 30;
 
-    // fullfill old version settings
-    if (
-      this.settings.dropbox.refreshToken !== "" &&
-      this.settings.dropbox.credentialsShouldBeDeletedAtTime === undefined
-    ) {
-      // It has a refreshToken, but not expire time.
-      // Likely to be a setting from old version.
-      // we set it to a month.
-      this.settings.dropbox.credentialsShouldBeDeletedAtTime =
-        current + 1000 * 60 * 60 * 24 * 30;
-      needSave = true;
-    }
-    if (
-      this.settings.onedrive.refreshToken !== "" &&
-      this.settings.onedrive.credentialsShouldBeDeletedAtTime === undefined
-    ) {
-      this.settings.onedrive.credentialsShouldBeDeletedAtTime =
-        current + 1000 * 60 * 60 * 24 * 30;
-      needSave = true;
-    }
+    // Define all OAuth services with their expiry field names and default configs
+    const oauthServices: Array<{
+      name: string;
+      settingsKey: string;
+      tokenField: string;
+      expiryField: string;
+      defaultConfig: any;
+    }> = [
+      {
+        name: "Dropbox",
+        settingsKey: "dropbox",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTime",
+        defaultConfig: DEFAULT_DROPBOX_CONFIG,
+      },
+      {
+        name: "OneDrive (App Folder)",
+        settingsKey: "onedrive",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTime",
+        defaultConfig: DEFAULT_ONEDRIVE_CONFIG,
+      },
+      {
+        name: "OneDrive (Full)",
+        settingsKey: "onedrivefull",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTime",
+        defaultConfig: DEFAULT_ONEDRIVEFULL_CONFIG,
+      },
+      {
+        name: "Google Drive",
+        settingsKey: "googledrive",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTimeMs",
+        defaultConfig: DEFAULT_GOOGLEDRIVE_CONFIG,
+      },
+      {
+        name: "Box",
+        settingsKey: "box",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTimeMs",
+        defaultConfig: DEFAULT_BOX_CONFIG,
+      },
+      {
+        name: "pCloud",
+        settingsKey: "pcloud",
+        tokenField: "accessToken",
+        expiryField: "credentialsShouldBeDeletedAtTimeMs",
+        defaultConfig: DEFAULT_PCLOUD_CONFIG,
+      },
+      {
+        name: "Yandex Disk",
+        settingsKey: "yandexdisk",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTimeMs",
+        defaultConfig: DEFAULT_YANDEXDISK_CONFIG,
+      },
+      {
+        name: "Koofr",
+        settingsKey: "koofr",
+        tokenField: "refreshToken",
+        expiryField: "credentialsShouldBeDeletedAtTimeMs",
+        defaultConfig: DEFAULT_KOOFR_CONFIG,
+      },
+    ];
 
-    // check expired or not
-    let dropboxExpired = false;
-    if (
-      this.settings.dropbox.refreshToken !== "" &&
-      current >= this.settings!.dropbox!.credentialsShouldBeDeletedAtTime!
-    ) {
-      console.warn(`dropbox expired`);
-      dropboxExpired = true;
-      this.settings.dropbox = cloneDeep(DEFAULT_DROPBOX_CONFIG);
-      needSave = true;
-    }
+    const expiredServices: string[] = [];
 
-    let onedriveExpired = false;
-    if (
-      this.settings.onedrive.refreshToken !== "" &&
-      current >= this.settings!.onedrive!.credentialsShouldBeDeletedAtTime!
-    ) {
-      console.warn(`onedrive expired`);
-      onedriveExpired = true;
-      this.settings.onedrive = cloneDeep(DEFAULT_ONEDRIVE_CONFIG);
-      needSave = true;
-    }
+    for (const svc of oauthServices) {
+      const config = (this.settings as any)[svc.settingsKey];
+      if (!config || config[svc.tokenField] === "") continue;
 
-    let onedriveFullExpired = false;
-    if (
-      this.settings.onedrivefull.refreshToken !== "" &&
-      current >= this.settings!.onedrivefull!.credentialsShouldBeDeletedAtTime!
-    ) {
-      console.warn(`onedrive full expired`);
-      onedriveFullExpired = true;
-      this.settings.onedrivefull = cloneDeep(DEFAULT_ONEDRIVEFULL_CONFIG);
-      needSave = true;
-    }
+      // Backfill missing expiry time for old settings (Dropbox/OneDrive only)
+      if (config[svc.expiryField] === undefined) {
+        config[svc.expiryField] = current + THIRTY_DAYS_MS;
+        needSave = true;
+      }
 
-    let googleDriveExpired = false;
-    if (
-      this.settings.googledrive.refreshToken !== "" &&
-      current >= this.settings!.googledrive!.credentialsShouldBeDeletedAtTimeMs!
-    ) {
-      console.warn(`google drive expired`);
-      googleDriveExpired = true;
-      this.settings.googledrive = cloneDeep(DEFAULT_GOOGLEDRIVE_CONFIG);
-      needSave = true;
-    }
-
-    let boxExpired = false;
-    if (
-      this.settings.box.refreshToken !== "" &&
-      current >= this.settings!.box!.credentialsShouldBeDeletedAtTimeMs!
-    ) {
-      console.warn(`box expired`);
-      boxExpired = true;
-      this.settings.box = cloneDeep(DEFAULT_BOX_CONFIG);
-      needSave = true;
-    }
-
-    let pCloudExpired = false;
-    if (
-      this.settings.pcloud.accessToken !== "" &&
-      current >= this.settings!.pcloud!.credentialsShouldBeDeletedAtTimeMs!
-    ) {
-      console.warn(`pcloud expired`);
-      pCloudExpired = true;
-      this.settings.pcloud = cloneDeep(DEFAULT_PCLOUD_CONFIG);
-      needSave = true;
-    }
-
-    let yandexDiskExpired = false;
-    if (
-      this.settings.yandexdisk.refreshToken !== "" &&
-      current >= this.settings!.yandexdisk!.credentialsShouldBeDeletedAtTimeMs!
-    ) {
-      console.warn(`yandex disk expired`);
-      yandexDiskExpired = true;
-      this.settings.yandexdisk = cloneDeep(DEFAULT_YANDEXDISK_CONFIG);
-      needSave = true;
-    }
-
-    let koofrExpired = false;
-    if (
-      this.settings.koofr.refreshToken !== "" &&
-      current >= this.settings!.koofr!.credentialsShouldBeDeletedAtTimeMs!
-    ) {
-      console.warn(`koofr expired`);
-      koofrExpired = true;
-      this.settings.koofr = cloneDeep(DEFAULT_KOOFR_CONFIG);
-      needSave = true;
+      // Check if expired
+      if (current >= config[svc.expiryField]) {
+        console.warn(`${svc.name} expired`);
+        (this.settings as any)[svc.settingsKey] = cloneDeep(svc.defaultConfig);
+        needSave = true;
+        expiredServices.push(svc.name);
+      }
     }
 
     if (this.settings.pro === undefined) {
@@ -1652,52 +1486,10 @@ export default class RemotelySavePlugin extends Plugin {
       await this.saveSettings();
     }
 
-    // send notice
-    if (dropboxExpired) {
+    // send notices for expired services
+    for (const name of expiredServices) {
       new Notice(
-        `${this.manifest.name}: You haven't manually auth Dropbox for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (onedriveExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth OneDrive (App Folder) for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (onedriveFullExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth OneDrive (Full) for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (googleDriveExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth Google Drive for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (boxExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth Box for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (pCloudExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth pCloud for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (yandexDiskExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth Yandex Disk for many days, you need to re-auth it again.`,
-        6000
-      );
-    }
-    if (koofrExpired) {
-      new Notice(
-        `${this.manifest.name}: You haven't manually auth koofr for many days, you need to re-auth it again.`,
+        `${this.manifest.name}: You haven't manually auth ${name} for many days, you need to re-auth it again.`,
         6000
       );
     }
@@ -1835,15 +1627,11 @@ export default class RemotelySavePlugin extends Plugin {
     this._checkCurrFileModified("SYNC");
   };
 
-  _syncOnSaveEvent2 = throttle(
+  _syncOnSaveEvent2 = debounce(
     async () => {
       await this._checkCurrFileModified("FILE_CHANGES");
     },
-    1000 * 3,
-    {
-      leading: false,
-      trailing: true,
-    }
+    1000 * 3
   );
 
   toggleSyncOnSaveIfSet() {
