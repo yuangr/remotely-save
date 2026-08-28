@@ -1,6 +1,6 @@
 {
   "name": "remotely-save",
-  "version": "0.5.25",
+  "version": "0.5.26",
   "description": "This is yet another sync plugin for Obsidian app.",
   "scripts": {
     "dev2": "node esbuild.config.mjs --watch",
@@ -46,6 +46,7 @@
     "npm-check-updates": "^16.14.20",
     "obsidian": "^1.5.7",
     "openapi-typescript": "^7.1.0",
+    "terser-webpack-plugin": "^5.6.1",
     "ts-loader": "^9.5.1",
     "tslib": "^2.6.3",
     "tsx": "^4.16.2",

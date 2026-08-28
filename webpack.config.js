@@ -65,6 +65,9 @@ module.exports = {
     new webpack.ProvidePlugin({
       process: "process/browser",
     }),
+    new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+      resource.request = resource.request.replace(/^node:/, "");
+    }),
   ],
   module: {
     rules: [
@@ -77,7 +80,10 @@ module.exports = {
       },
       {
         test: /\.tsx?$/,
-        use: "ts-loader",
+        loader: "ts-loader",
+        options: {
+          transpileOnly: true,
+        },
         exclude: /node_modules/,
       },
       {
@@ -95,6 +101,15 @@ module.exports = {
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
     mainFields: ["browser", "module", "main"],
+    alias: {
+      "node:url": require.resolve("url/"),
+      "node:buffer": require.resolve("buffer/"),
+      "node:stream": require.resolve("stream-browserify"),
+      "node:path": require.resolve("path-browserify"),
+      "node:process": require.resolve("process/browser"),
+      "node:crypto": require.resolve("crypto-browserify"),
+      "node:util": require.resolve("util/"),
+    },
     fallback: {
       // assert: require.resolve("assert"),
       // buffer: require.resolve("buffer/"),

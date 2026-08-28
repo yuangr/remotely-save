@@ -1,5 +1,13 @@
-// biome-ignore lint/suspicious/noShadowRestrictedNames: <explanation>
-import AggregateError from "aggregate-error";
+const AggregateError =
+  globalThis.AggregateError ??
+  class AggregateError extends Error {
+    errors: any[];
+    constructor(errors: any[], message?: string) {
+      super(message);
+      this.errors = errors;
+      this.name = "AggregateError";
+    }
+  };
 import PQueue from "p-queue";
 import XRegExp from "xregexp";
 import type {
