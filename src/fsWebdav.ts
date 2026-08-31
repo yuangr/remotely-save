@@ -58,9 +58,6 @@ export function patchWebdavRequest() {
           }
         }
 
-        const reqContentType =
-          transformedHeaders["accept"] ?? transformedHeaders["content-type"];
-
         let bodyData: any = options.data;
         if (bodyData !== undefined && bodyData !== null) {
           if (Buffer.isBuffer(bodyData)) {
@@ -73,6 +70,14 @@ export function patchWebdavRequest() {
           }
         }
 
+        let reqContentType: string | undefined = undefined;
+        if (bodyData !== undefined && bodyData !== null) {
+          reqContentType =
+            transformedHeaders["content-type"] ?? "application/octet-stream";
+        } else {
+          delete transformedHeaders["content-type"];
+        }
+
         const p: RequestUrlParam = {
           url: targetUrl,
           method: options.method,
@@ -83,11 +88,31 @@ export function patchWebdavRequest() {
         };
 
         let r: any;
-        try {
-          r = await requestUrl(p);
-        } catch (reqErr: any) {
-          console.error(`requestUrl network error for ${targetUrl}:`, reqErr);
-          throw reqErr;
+        let lastErr: any;
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            r = await requestUrl(p);
+            lastErr = undefined;
+            break;
+          } catch (reqErr: any) {
+            lastErr = reqErr;
+            console.warn(
+              `requestUrl attempt ${attempt}/${maxAttempts} failed for ${targetUrl}:`,
+              reqErr?.message || reqErr
+            );
+            if (attempt < maxAttempts) {
+              await delay(300 * attempt);
+            }
+          }
+        }
+
+        if (lastErr !== undefined) {
+          console.error(
+            `requestUrl network error for ${targetUrl} after ${maxAttempts} attempts:`,
+            lastErr
+          );
+          throw lastErr;
         }
 
         if (
