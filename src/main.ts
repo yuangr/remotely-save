@@ -111,7 +111,6 @@ import {
   getLastFailedSyncTimeByVault,
   getLastSuccessSyncTimeByVault,
   prepareDBs,
-  upsertLastFailedSyncTimeByVault,
   upsertLastSuccessSyncTimeByVault,
   upsertPluginVersionByVault,
 } from "./localdb";

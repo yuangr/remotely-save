@@ -28,7 +28,6 @@ import { generateGoogleDriveSettingsPart } from "../pro/src/settingsGoogleDrive"
 import { generateKoofrSettingsPart } from "../pro/src/settingsKoofr";
 import { generateOnedriveFullSettingsPart } from "../pro/src/settingsOnedriveFull";
 import { generatePCloudSettingsPart } from "../pro/src/settingsPCloud";
-import { generateProSettingsPart } from "../pro/src/settingsPro";
 import { generateYandexDiskSettingsPart } from "../pro/src/settingsYandexDisk";
 import { API_VER_ENSURE_REQURL_OK, VALID_REQURL } from "./baseTypesObs";
 import { messyConfigToNormal } from "./configPersist";
@@ -2739,33 +2738,6 @@ export class RemotelySaveSettingTab extends PluginSettingTab {
           }
         });
       });
-
-    //////////////////////////////////////////////////
-    // below for pro
-    //////////////////////////////////////////////////
-
-    const proDiv = containerEl.createEl("div");
-    generateProSettingsPart(
-      proDiv,
-      t,
-      this.app,
-      this.plugin,
-      () => this.plugin.saveSettings(),
-      onedriveFullAllowedToUsedDiv,
-      onedriveFullNotShowUpHintSetting,
-      googleDriveAllowedToUsedDiv,
-      googleDriveNotShowUpHintSetting,
-      boxAllowedToUsedDiv,
-      boxNotShowUpHintSetting,
-      pCloudAllowedToUsedDiv,
-      pCloudNotShowUpHintSetting,
-      yandexDiskAllowedToUsedDiv,
-      yandexDiskNotShowUpHintSetting,
-      koofrAllowedToUsedDiv,
-      koofrNotShowUpHintSetting,
-      azureBlobStorageAllowedToUsedDiv,
-      azureBlobStorageNotShowUpHintSetting
-    );
 
     //////////////////////////////////////////////////
     // below for debug

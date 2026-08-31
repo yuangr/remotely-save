@@ -8,12 +8,8 @@ import { Platform, type RequestUrlParam, requestUrl } from "obsidian";
 import type {
   FileStat,
   RequestOptionsWithState,
-  WebDAVClient,
-  // Response,
-  // ResponseDataDetailed,
 } from "webdav";
 import type { Entity, WebdavConfig } from "./baseTypes";
-import { VALID_REQURL } from "./baseTypesObs";
 import { FakeFs } from "./fsAll";
 import { bufferToArrayBuffer, delay, splitFileSizeToChunkRanges } from "./misc";
 
@@ -39,104 +35,113 @@ function objKeyToLower(obj: Record<string, string>) {
 
 // @ts-ignore
 import { getPatcher } from "webdav/dist/web/index.js";
-if (VALID_REQURL) {
-  getPatcher().patch(
-    "request",
-    async (options: RequestOptionsWithState): Promise<Response> => {
-      const transformedHeaders = objKeyToLower({ ...options.headers });
-      delete transformedHeaders["host"];
-      delete transformedHeaders["content-length"];
 
-      const reqContentType =
-        transformedHeaders["accept"] ?? transformedHeaders["content-type"];
+export function patchWebdavRequest() {
+  try {
+    getPatcher().patch(
+      "request",
+      async (options: RequestOptionsWithState): Promise<Response> => {
+        let targetUrl = options.url;
+        try {
+          targetUrl = new URL(options.url).href;
+        } catch (e) {
+          targetUrl = encodeURI(options.url);
+        }
 
-      const retractedHeaders = { ...transformedHeaders };
-      if (retractedHeaders.hasOwnProperty("authorization")) {
-        retractedHeaders["authorization"] = "<retracted>";
-      }
+        const transformedHeaders = objKeyToLower({ ...options.headers });
+        delete transformedHeaders["host"];
+        delete transformedHeaders["content-length"];
 
-      // console.debug(`before request:`);
-      // console.debug(`url: ${options.url}`);
-      // console.debug(`method: ${options.method}`);
-      // console.debug(`headers: ${JSON.stringify(retractedHeaders, null, 2)}`);
-      // console.debug(`reqContentType: ${reqContentType}`);
-
-      const p: RequestUrlParam = {
-        url: options.url,
-        method: options.method,
-        body: options.data as string | ArrayBuffer,
-        headers: transformedHeaders,
-        contentType: reqContentType,
-        throw: false,
-      };
-
-      let r = await requestUrl(p);
-
-      if (
-        r.status === 401 &&
-        Platform.isIosApp &&
-        !options.url.endsWith("/") &&
-        !options.url.endsWith(".md") &&
-        options.method.toUpperCase() === "PROPFIND"
-      ) {
-        // don't ask me why,
-        // some webdav servers have some mysterious behaviours,
-        // if a folder doesn't exist without slash, the servers return 401 instead of 404
-        // here is a dirty hack that works
-        console.debug(`so we have 401, try appending request url with slash`);
-        p.url = `${options.url}/`;
-        r = await requestUrl(p);
-      }
-
-      // console.debug(`after request:`);
-      const rspHeaders = objKeyToLower({ ...r.headers });
-      // console.debug(`rspHeaders: ${JSON.stringify(rspHeaders, null, 2)}`);
-      for (const key in rspHeaders) {
-        if (rspHeaders.hasOwnProperty(key)) {
-          // avoid the error:
-          // Failed to read the 'headers' property from 'ResponseInit': String contains non ISO-8859-1 code point.
-          // const possibleNonAscii = [
-          //   "Content-Disposition",
-          //   "X-Accel-Redirect",
-          //   "X-Outfilename",
-          //   "X-Sendfile"
-          // ];
-          // for (const p of possibleNonAscii) {
-          //   if (key === p || key === p.toLowerCase()) {
-          //     rspHeaders[key] = encodeURIComponent(rspHeaders[key]);
-          //   }
-          // }
-          if (!onlyAscii(rspHeaders[key])) {
-            // console.debug(`rspHeaders[key] needs encode: ${key}`);
-            rspHeaders[key] = encodeURIComponent(rspHeaders[key]);
+        for (const k of Object.keys(transformedHeaders)) {
+          if (transformedHeaders[k] === undefined || transformedHeaders[k] === null) {
+            delete transformedHeaders[k];
           }
         }
-      }
 
-      let r2: Response | undefined = undefined;
-      const statusText = getReasonPhrase(r.status);
-      // console.debug(`statusText: ${statusText}`);
-      if ([101, 103, 204, 205, 304].includes(r.status)) {
-        // A null body status is a status that is 101, 103, 204, 205, or 304.
-        // https://fetch.spec.whatwg.org/#statuses
-        // fix this: Failed to construct 'Response': Response with null body status cannot have body
-        r2 = new Response(null, {
-          status: r.status,
-          statusText: statusText,
-          headers: rspHeaders,
-        });
-      } else {
-        r2 = new Response(r.arrayBuffer, {
-          status: r.status,
-          statusText: statusText,
-          headers: rspHeaders,
-        });
-      }
+        const reqContentType =
+          transformedHeaders["accept"] ?? transformedHeaders["content-type"];
 
-      return r2;
-    }
-  );
+        let bodyData: any = options.data;
+        if (bodyData !== undefined && bodyData !== null) {
+          if (Buffer.isBuffer(bodyData)) {
+            bodyData = bufferToArrayBuffer(bodyData);
+          } else if (bodyData instanceof Uint8Array) {
+            bodyData = bodyData.buffer.slice(
+              bodyData.byteOffset,
+              bodyData.byteOffset + bodyData.byteLength
+            );
+          }
+        }
+
+        const p: RequestUrlParam = {
+          url: targetUrl,
+          method: options.method,
+          body: bodyData,
+          headers: transformedHeaders,
+          contentType: reqContentType,
+          throw: false,
+        };
+
+        let r: any;
+        try {
+          r = await requestUrl(p);
+        } catch (reqErr: any) {
+          console.error(`requestUrl network error for ${targetUrl}:`, reqErr);
+          throw reqErr;
+        }
+
+        if (
+          r.status === 401 &&
+          Platform.isIosApp &&
+          !targetUrl.endsWith("/") &&
+          !targetUrl.endsWith(".md") &&
+          options.method.toUpperCase() === "PROPFIND"
+        ) {
+          p.url = `${targetUrl}/`;
+          r = await requestUrl(p);
+        }
+
+        const rspHeaders = objKeyToLower({ ...r.headers });
+        for (const key in rspHeaders) {
+          if (rspHeaders.hasOwnProperty(key)) {
+            if (!onlyAscii(rspHeaders[key])) {
+              rspHeaders[key] = encodeURIComponent(rspHeaders[key]);
+            }
+          }
+        }
+
+        let r2: Response | undefined = undefined;
+        let statusText = "OK";
+        try {
+          statusText = getReasonPhrase(r.status);
+        } catch (e) {
+          statusText = r.status === 200 ? "OK" : "Status " + r.status;
+        }
+
+        if ([101, 103, 204, 205, 304].includes(r.status)) {
+          r2 = new Response(null, {
+            status: r.status,
+            statusText: statusText,
+            headers: rspHeaders,
+          });
+        } else {
+          r2 = new Response(r.arrayBuffer ?? r.text ?? "", {
+            status: r.status,
+            statusText: statusText,
+            headers: rspHeaders,
+          });
+        }
+
+        return r2;
+      }
+    );
+  } catch (err) {
+    console.warn("patchWebdavRequest failed:", err);
+  }
 }
+
+// Call on module load
+patchWebdavRequest();
 
 // @ts-ignore
 // biome-ignore lint: we want to ts-ignore the next line
@@ -285,6 +290,7 @@ export class FakeFsWebdav extends FakeFs {
   }
 
   async _init() {
+    patchWebdavRequest();
     // init client if not inited
     if (this.client !== undefined) {
       return;

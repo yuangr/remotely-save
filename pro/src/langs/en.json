@@ -1,6 +1,6 @@
 {
-  "settings_conflictaction_smart_conflict": "Smart Conflict (PRO) (beta)",
-  "settings_conflictaction_smart_conflict_desc": "<p><strong>!!It's a PRO feature! You need an online account for this feature!!</strong>(<a href=\"#settings-pro\">scroll down</a> for more info about PRO account.)</p><p><ul><li>For small markdown files, the plugin tries to merge them with diff3 algorithm.</li><li>For large files or not-markdown files, the plugin saves both files by renaming them.</li></ul></p><p><strong>Please manually backup your vaule before using this feature!</strong></p>",
+  "settings_conflictaction_smart_conflict": "Smart Conflict Resolution (Recommended)",
+  "settings_conflictaction_smart_conflict_desc": "<p><strong>3-Way Line Merge + Conflict Copy Protection:</strong></p><p><ul><li>For Markdown files, automatically merges non-conflicting edits from both devices.</li><li>When direct line conflicts occur, preserves the main file cleanly and saves the conflicting version as a sidecar copy (<code>.sync-conflict-xxx.md</code>) to ensure 0 data loss.</li></ul></p>",
 
   "protocol_pro_connecting": "Connectting",
   "protocol_pro_connect_manualinput_succ": "You've connected",

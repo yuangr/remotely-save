@@ -1,6 +1,6 @@
 {
-  "settings_conflictaction_smart_conflict": "智慧處理衝突 (PRO) (beta)",
-  "settings_conflictaction_smart_conflict_desc": "<p><strong>！！這是 PRO（付費）功能! 您需要線上賬號來使用此功能！！</strong>（<a href=\"#settings-pro\">向下滑</a>可以看到 PRO 賬號的更多資訊。）</p><p><ul><li>小 markdown 檔案，本外掛嘗試使用 diff3 演算法合併它；</li><li>對於大檔案或非 markdown 檔案，本外掛嘗試改名字並均進行儲存。</li></ul></p><p><strong>請注意先手動備份 vault 檔案再用此功能！</strong></p>",
+  "settings_conflictaction_smart_conflict": "智慧處理衝突 (推薦)",
+  "settings_conflictaction_smart_conflict_desc": "<p><strong>三方智慧行級合併 + 衝突副本保護：</strong></p><p><ul><li>對於 Markdown 檔案，自動進行三方智慧合併，保留兩端非衝突修改；</li><li>若發生直接衝突，主檔案保持整潔，並將衝突版本自動儲存為副本（<code>.sync-conflict-xxx.md</code>），確保資料 100% 安全零丟失。</li></ul></p>",
 
   "protocol_pro_connecting": "正在連線",
   "protocol_pro_connect_manualinput_succ": "連線成功",

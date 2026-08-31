@@ -1,6 +1,6 @@
 {
-  "settings_conflictaction_smart_conflict": "智能处理冲突 (PRO) (beta)",
-  "settings_conflictaction_smart_conflict_desc": "<p><strong>！！这是 PRO（付费）功能! 您需要在线账号来使用此功能！！</strong>（<a href=\"#settings-pro\">向下滑</a>可以看到 PRO 账号的更多信息。）</p><p><ul><li>小 markdown 文件，本插件尝试使用 diff3 算法合并它；</li><li>对于大文件或非 markdown 文件，本插件尝试改名字并均进行保存。</li></ul></p><p><strong>请注意先手动备份 vault 文件再用此功能！</strong></p>",
+  "settings_conflictaction_smart_conflict": "智能处理冲突 (推荐)",
+  "settings_conflictaction_smart_conflict_desc": "<p><strong>三方智能行级合并 + 冲突副本保护：</strong></p><p><ul><li>对于 Markdown 文件，自动进行三方智能合并，保留两端非冲突修改；</li><li>若发生直接冲突，主文件保持整洁，并将冲突版本自动保存为副本（<code>.sync-conflict-xxx.md</code>），确保数据 100% 安全零丢失。</li></ul></p>",
 
   "protocol_pro_connecting": "正在连接",
   "protocol_pro_connect_manualinput_succ": "连接成功",
