@@ -585,12 +585,18 @@ export class FakeFsOnedrive extends FakeFs {
           .length > 0;
       if (!this.vaultFolderExists) {
         console.info(`remote does not have folder /${this.remoteBaseDir}`);
-        await this._postJson("/drive/special/approot/children", {
-          name: `${this.remoteBaseDir}`,
-          folder: {},
-          "@microsoft.graph.conflictBehavior": "replace",
-        });
-        console.info(`remote folder /${this.remoteBaseDir} created`);
+        try {
+          await this._postJson("/drive/special/approot/children", {
+            name: `${this.remoteBaseDir}`,
+            folder: {},
+            "@microsoft.graph.conflictBehavior": "fail",
+          });
+          console.info(`remote folder /${this.remoteBaseDir} created`);
+        } catch (e: any) {
+          if (e?.statusCode !== 409 && e?.status !== 409) {
+            throw e;
+          }
+        }
         this.vaultFolderExists = true;
       } else {
         // console.info(`remote folder /${this.remoteBaseDir} exists`);
@@ -874,7 +880,7 @@ export class FakeFsOnedrive extends FakeFs {
       // use PATCH to create folder recursively!!!
       const playload: any = {
         folder: {},
-        "@microsoft.graph.conflictBehavior": "replace",
+        "@microsoft.graph.conflictBehavior": "fail",
       };
       const fileSystemInfo: Record<string, string> = {};
       if (mtime !== undefined && mtime !== 0) {
