@@ -14,23 +14,37 @@ console.log(`esbuild version = ${esbuild.version}`);
 
 const prod = process.argv[2] === "production";
 
-const DEFAULT_DROPBOX_APP_KEY = process.env.DROPBOX_APP_KEY || "";
-const DEFAULT_ONEDRIVE_CLIENT_ID = process.env.ONEDRIVE_CLIENT_ID || "";
-const DEFAULT_ONEDRIVE_AUTHORITY = process.env.ONEDRIVE_AUTHORITY || "";
-const DEFAULT_REMOTELYSAVE_WEBSITE = process.env.REMOTELYSAVE_WEBSITE || "";
-const DEFAULT_REMOTELYSAVE_CLIENT_ID = process.env.REMOTELYSAVE_CLIENT_ID || "";
+const DEFAULT_DROPBOX_APP_KEY =
+  process.env.DROPBOX_APP_KEY || "uwxv4ofkrmc4zzf";
+const DEFAULT_ONEDRIVE_CLIENT_ID =
+  process.env.ONEDRIVE_CLIENT_ID || "3729fc1c-0af2-4bec-9376-d7ac4f0ff806";
+const DEFAULT_ONEDRIVE_AUTHORITY =
+  process.env.ONEDRIVE_AUTHORITY || "https://login.microsoftonline.com/common";
+const DEFAULT_REMOTELYSAVE_WEBSITE =
+  process.env.REMOTELYSAVE_WEBSITE || "https://remotely-save-site.fyears.org";
+const DEFAULT_REMOTELYSAVE_CLIENT_ID =
+  process.env.REMOTELYSAVE_CLIENT_ID ||
+  "cli-RcskZDNbskll95WHJ3rNa8G34YlD3DML3cmwGOpEpbpvm82rIVGWmQMKJ60NjjGJKB6H_fOeHicW9W0H";
 const DEFAULT_GOOGLEDRIVE_CLIENT_ID = process.env.GOOGLEDRIVE_CLIENT_ID || "";
 const DEFAULT_GOOGLEDRIVE_CLIENT_SECRET =
   process.env.GOOGLEDRIVE_CLIENT_SECRET || "";
-const DEFAULT_BOX_CLIENT_ID = process.env.BOX_CLIENT_ID || "";
-const DEFAULT_BOX_CLIENT_SECRET = process.env.BOX_CLIENT_SECRET || "";
-const DEFAULT_PCLOUD_CLIENT_ID = process.env.PCLOUD_CLIENT_ID || "";
-const DEFAULT_PCLOUD_CLIENT_SECRET = process.env.PCLOUD_CLIENT_SECRET || "";
-const DEFAULT_YANDEXDISK_CLIENT_ID = process.env.YANDEXDISK_CLIENT_ID || "";
+const DEFAULT_BOX_CLIENT_ID =
+  process.env.BOX_CLIENT_ID || "o0ohclnln6xf7fpd1pnomqpl42v0w3hl";
+const DEFAULT_BOX_CLIENT_SECRET =
+  process.env.BOX_CLIENT_SECRET || "oDrcpdgifz24NJMN6OmgC2kvYCChbYMX";
+const DEFAULT_PCLOUD_CLIENT_ID =
+  process.env.PCLOUD_CLIENT_ID || "zrDphYT1giQ";
+const DEFAULT_PCLOUD_CLIENT_SECRET =
+  process.env.PCLOUD_CLIENT_SECRET || "TqjVEEaXlsHwCOczzm0R9SBmxf2y";
+const DEFAULT_YANDEXDISK_CLIENT_ID =
+  process.env.YANDEXDISK_CLIENT_ID || "01d8aee92915469dba50b70965d77323";
 const DEFAULT_YANDEXDISK_CLIENT_SECRET =
-  process.env.YANDEXDISK_CLIENT_SECRET || "";
-const DEFAULT_KOOFR_CLIENT_ID = process.env.KOOFR_CLIENT_ID || "";
-const DEFAULT_KOOFR_CLIENT_SECRET = process.env.KOOFR_CLIENT_SECRET || "";
+  process.env.YANDEXDISK_CLIENT_SECRET || "71da4965f9124deab95444df46afa651";
+const DEFAULT_KOOFR_CLIENT_ID =
+  process.env.KOOFR_CLIENT_ID || "LUOCNJ27DECBGKZRG22RHPBAMVK3CUWF";
+const DEFAULT_KOOFR_CLIENT_SECRET =
+  process.env.KOOFR_CLIENT_SECRET ||
+  "WJH6XQF2AXK6UINDM2T3STD7OAYCX6H4ZL3T4KPYSTW4R5AKI4W26Q6C76WZQ5DT";
 
 esbuild
   .context({
