@@ -125,7 +125,7 @@ export const sendAuthReq = async (
   // https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow
   // https://docs.microsoft.com/en-us/onedrive/developer/rest-api/getting-started/graph-oauth?view=odsp-graph-online#code-flow
   try {
-    const rsp1 = await request({
+    const rsp1 = await requestUrl({
       url: `${authority}/oauth2/v2.0/token`,
       method: "POST",
       contentType: "application/x-www-form-urlencoded",
@@ -140,7 +140,7 @@ export const sendAuthReq = async (
       }).toString(),
     });
 
-    const rsp2 = JSON.parse(rsp1);
+    const rsp2 = rsp1.json;
     // console.info(rsp2);
 
     if (rsp2.error !== undefined) {
@@ -161,7 +161,7 @@ export const sendRefreshTokenReq = async (
 ) => {
   // also use Obsidian request to bypass CORS issue.
   try {
-    const rsp1 = await request({
+    const rsp1 = await requestUrl({
       url: `${authority}/oauth2/v2.0/token`,
       method: "POST",
       contentType: "application/x-www-form-urlencoded",
@@ -174,7 +174,7 @@ export const sendRefreshTokenReq = async (
       }).toString(),
     });
 
-    const rsp2 = JSON.parse(rsp1);
+    const rsp2 = rsp1.json;
     // console.info(rsp2);
 
     if (rsp2.error !== undefined) {
@@ -473,49 +473,46 @@ export class FakeFsOnedriveFull extends FakeFs {
   async _getJson(pathFragOrig: string) {
     const theUrl = this._buildUrl(pathFragOrig);
     console.debug(`getJson, theUrl=${theUrl}`);
-    return JSON.parse(
-      await request({
-        url: theUrl,
-        method: "GET",
-        contentType: "application/json",
-        headers: {
-          Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
-          "Cache-Control": "no-cache",
-        },
-      })
-    );
+    const res = await requestUrl({
+      url: theUrl,
+      method: "GET",
+      contentType: "application/json",
+      headers: {
+        Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
+        "Cache-Control": "no-cache",
+      },
+    });
+    return res.json;
   }
 
   async _postJson(pathFragOrig: string, payload: any) {
     const theUrl = this._buildUrl(pathFragOrig);
     console.debug(`postJson, theUrl=${theUrl}`);
-    return JSON.parse(
-      await request({
-        url: theUrl,
-        method: "POST",
-        contentType: "application/json",
-        body: JSON.stringify(payload),
-        headers: {
-          Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
-        },
-      })
-    );
+    const res = await requestUrl({
+      url: theUrl,
+      method: "POST",
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
+      },
+    });
+    return res.json;
   }
 
   async _patchJson(pathFragOrig: string, payload: any) {
     const theUrl = this._buildUrl(pathFragOrig);
     console.debug(`patchJson, theUrl=${theUrl}`);
-    return JSON.parse(
-      await request({
-        url: theUrl,
-        method: "PATCH",
-        contentType: "application/json",
-        body: JSON.stringify(payload),
-        headers: {
-          Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
-        },
-      })
-    );
+    const res = await requestUrl({
+      url: theUrl,
+      method: "PATCH",
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+      headers: {
+        Authorization: `Bearer ${await this.authGetter.getAccessToken()}`,
+      },
+    });
+    return res.json;
   }
 
   async _deleteJson(pathFragOrig: string) {
