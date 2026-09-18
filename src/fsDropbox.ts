@@ -31,6 +31,12 @@ export const DEFAULT_DROPBOX_CONFIG: DropboxConfig = {
   credentialsShouldBeDeletedAtTime: 0,
 };
 
+// Dropbox's /files/upload is documented for files under 150 MB;
+// use an upload session above this size (100 MiB leaves a safe margin).
+const DROPBOX_UPLOAD_SESSION_THRESHOLD = 100 * 1024 * 1024;
+// Chunk size for upload sessions: must be a multiple of 4 MiB, at most 150 MB.
+const DROPBOX_UPLOAD_SESSION_CHUNK_SIZE = 32 * 1024 * 1024;
+
 const getDropboxPath = (fileOrFolderPath: string, remoteBaseDir: string) => {
   let key = fileOrFolderPath;
   if (fileOrFolderPath === "/" || fileOrFolderPath === "") {
@@ -636,20 +642,25 @@ export class FakeFsDropbox extends FakeFs {
       .replace(/\.\d{3}Z$/, "Z");
 
     // in dropbox, we don't need to create folders before uploading! cool!
-    // TODO: filesUploadSession for larger files (>=150 MB)
-
-    await retryReq(
-      () =>
-        this.dropbox.filesUpload({
-          path: key,
-          contents: content,
-          mode: {
-            ".tag": "overwrite",
-          },
-          client_modified: mtimeStr,
-        }),
-      origKey // hint
-    );
+    // Dropbox's simple /files/upload endpoint only supports files up to
+    // 150 MB. Larger files must go through an upload session, sent in
+    // chunks (each chunk except the last must be a multiple of 4 MiB).
+    if (content.byteLength > DROPBOX_UPLOAD_SESSION_THRESHOLD) {
+      await this._writeLargeFileViaSession(key, content, mtimeStr, origKey);
+    } else {
+      await retryReq(
+        () =>
+          this.dropbox.filesUpload({
+            path: key,
+            contents: content,
+            mode: {
+              ".tag": "overwrite",
+            },
+            client_modified: mtimeStr,
+          }),
+        origKey // hint
+      );
+    }
 
     // we want to mark that parent folders are created
     if (this.foldersCreatedBefore !== undefined) {
@@ -661,6 +672,70 @@ export class FakeFsDropbox extends FakeFs {
       }
     }
     return await this._statFromRoot(key);
+  }
+
+  /**
+   * Upload a large file using Dropbox upload sessions:
+   * upload_session/start -> append_v2 (repeated) -> finish.
+   * The final "finish" call carries the same commit info (path, overwrite
+   * mode, client_modified) that the simple upload path uses.
+   */
+  async _writeLargeFileViaSession(
+    key: string,
+    content: ArrayBuffer,
+    mtimeStr: string,
+    origKey: string
+  ): Promise<void> {
+    const total = content.byteLength;
+    const chunkSize = DROPBOX_UPLOAD_SESSION_CHUNK_SIZE;
+    const hint = `${origKey} (upload session, ${total} bytes)`;
+
+    // first chunk
+    let offset = Math.min(chunkSize, total);
+    const startRsp = await retryReq(
+      () =>
+        this.dropbox.filesUploadSessionStart({
+          close: false,
+          contents: content.slice(0, offset),
+        }),
+      `${hint}: start`
+    );
+    const sessionId = startRsp?.result?.session_id;
+    if (sessionId === undefined || sessionId === "") {
+      throw new Error(`${hint}: Dropbox did not return an upload session id`);
+    }
+
+    // middle chunks: keep at least one chunk for the finish call
+    while (total - offset > chunkSize) {
+      const end = offset + chunkSize;
+      const thisOffset = offset;
+      await retryReq(
+        () =>
+          this.dropbox.filesUploadSessionAppendV2({
+            cursor: { session_id: sessionId, offset: thisOffset },
+            close: false,
+            contents: content.slice(thisOffset, end),
+          }),
+        `${hint}: append at ${thisOffset}`
+      );
+      offset = end;
+    }
+
+    // last chunk + commit
+    const finalOffset = offset;
+    await retryReq(
+      () =>
+        this.dropbox.filesUploadSessionFinish({
+          cursor: { session_id: sessionId, offset: finalOffset },
+          commit: {
+            path: key,
+            mode: { ".tag": "overwrite" },
+            client_modified: mtimeStr,
+          },
+          contents: content.slice(finalOffset, total),
+        }),
+      `${hint}: finish at ${finalOffset}`
+    );
   }
 
   async readFile(key: string): Promise<ArrayBuffer> {
