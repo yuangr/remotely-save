@@ -1,7 +1,7 @@
 import { DEFAULT_DEBUG_FOLDER, type Entity } from "./baseTypes";
 import { FakeFs } from "./fsAll";
 
-import { TFile, TFolder, type Vault } from "obsidian";
+import { Platform, TFile, TFolder, type Vault } from "obsidian";
 import { mkdirpInVault, statFix, unixTimeToStr } from "./misc";
 import { listFilesInObsFolder } from "./obsFolderLister";
 import type { Profiler } from "./profiler";
@@ -156,10 +156,39 @@ export class FakeFsLocal extends FakeFs {
     mtime: number,
     ctime: number
   ): Promise<Entity> {
-    await this.vault.adapter.writeBinary(key, content, {
-      mtime: mtime,
-      ctime: ctime,
-    });
+    try {
+      await this.vault.adapter.writeBinary(key, content, {
+        mtime: mtime,
+        ctime: ctime,
+      });
+    } catch (err: any) {
+      if (
+        Platform.isDesktopApp &&
+        (err?.code === "EPERM" ||
+          err?.code === "EACCES" ||
+          err?.message?.includes("operation not permitted"))
+      ) {
+        try {
+          const adapter: any = this.vault.adapter;
+          const basePath = adapter.getBasePath ? adapter.getBasePath() : "";
+          if (basePath) {
+            const fsModule = require("fs");
+            const fullPath = require("path").join(basePath, key);
+            if (fsModule.existsSync(fullPath)) {
+              fsModule.chmodSync(fullPath, 0o666);
+              await this.vault.adapter.writeBinary(key, content, {
+                mtime: mtime,
+                ctime: ctime,
+              });
+              return await this.stat(key);
+            }
+          }
+        } catch (_chmodErr) {
+          throw err;
+        }
+      }
+      throw err;
+    }
     return await this.stat(key);
   }
 
