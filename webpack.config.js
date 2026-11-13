@@ -42,8 +42,12 @@ module.exports = {
     filename: "main.js",
     path: __dirname,
     libraryTarget: "commonjs",
+    publicPath: "",
   },
   plugins: [
+    new webpack.optimize.LimitChunkCountPlugin({
+      maxChunks: 1,
+    }),
     new webpack.DefinePlugin({
       "global.DEFAULT_DROPBOX_APP_KEY": `"${DEFAULT_DROPBOX_APP_KEY}"`,
       "global.DEFAULT_ONEDRIVE_CLIENT_ID": `"${DEFAULT_ONEDRIVE_CLIENT_ID}"`,
